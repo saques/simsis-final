@@ -4,7 +4,10 @@
 #include <sstream>
 #include <string>
 #include <chrono>
-
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <Windows.h>
 #include "cuda_runtime.h"
 
 #include "classes/Particle.hpp"
@@ -17,37 +20,22 @@
 		return 1; \
 		} \
 
-#if 1
-#define WRITE_BUFFER_SIZE 1024 * 1024
 __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
-	static char buf[WRITE_BUFFER_SIZE];
+	int s = grid->getRows() * grid->getCols();
+	char * buf = new char[s * 20 * 3];
 	char * bufp = (char *) buf;
-	Grid<Particle>* g  = grid;
-	int s = g->getRows() * g->getCols();
+	
 	int len = sprintf(bufp, "%d \n\n", s);
 	bufp += len;
-	for (int row = 0; row < g->getRows(); row++)
-		for (int col = 0; col < g->getCols(); col++) {
-			Vec3 vec = g->get(row, col).position;
-			int len = sprintf(bufp, "%f %f %f \n", vec.x, vec.y, vec.z);
+	for (int row = 0; row < grid->getRows(); row++)
+		for (int col = 0; col < grid->getCols(); col++) {
+			Vec3 vec = grid->get(row, col).position;
+			int len = sprintf(bufp, "%f %f %f\n", vec.x, vec.y, vec.z);
 			bufp += len;
 		}
 	file.write(buf, bufp - buf);
+	delete[] buf;
 }
-#else
-__host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
-	Grid<Particle>* g = grid;
-	int s = g->getRows() * g->getCols();
-	file << s << std::endl;
-	file << std::endl;
-	for (int row = 0; row < g->getRows(); row++)
-		for (int col = 0; col < g->getCols(); col++) {
-			Vec3 vec = g->get(row, col).position;
-			file << vec.x << " " << vec.y << " " << vec.z << std::endl;
-		}
-}
-#endif
-
 
 //A test to show how to work with classes and CUDA
 //See Grid.hpp and test.cu
@@ -103,8 +91,8 @@ int vectorsExample() {
 	return 0;
 }
 
-#define DUMP_FILE "particles.dump"
-
+#define DUMP_FOLDER "dump"
+#define THREAD_COUNT 8
 int main(){
 	cudaError_t status;
 
@@ -123,18 +111,58 @@ int main(){
 	
 	initializePositions <<<dimGrid, dimBlock >>> (g_device, 1);
 	Grid<Particle> * d;
-	std::ofstream file(DUMP_FILE);
+	
 	auto pre = clock.now();
+
+	std::queue<Grid<Particle>*> q;
+	int count = 0;
+	std::mutex m;
+
+	CreateDirectory(DUMP_FOLDER, nullptr);
+	auto writer = [&q, ticks, &count, &m] {
+		while (count < ticks) {
+			Grid<Particle>* el = nullptr;
+			int c = 0;
+			m.lock();
+			if (!q.empty()) {
+				el = q.front();
+				q.pop();
+				c = count;
+				count++;
+			}
+			m.unlock();
+			if (el != nullptr) {
+				std::ofstream file(std::string(DUMP_FOLDER) + "/" + std::to_string(c) + ".dump");
+				writeToFile(el, file);
+				delete el;
+				file.close();
+			}
+			else {
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+		}
+	};
+
+	std::thread t[THREAD_COUNT];
+	for (int i = 0; i < THREAD_COUNT; i++) {
+		t[i] = std::thread(writer);
+	}
+
 	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
 		moveDownwards << <dimGrid, dimBlock >> > (g_device, 1);
 		d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
-		writeToFile(d, file);
-		delete d;
+		m.lock();
+		q.push(d);
+		m.unlock();
 	}
+	
+	for (int i = 0; i < THREAD_COUNT; i++) {
+		t[i].join();
+	}
+
 	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - pre);
 	printf("Millis elapsed: %d", elapsed.count());
-	file.close();
 	status = cudaDeviceReset();
 	return 0;
 }
