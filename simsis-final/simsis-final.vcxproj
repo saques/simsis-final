@@ -78,15 +78,9 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="Vector.cu" />
-  </ItemGroup>
-  <ItemGroup>
     <CudaCompile Include="main.cu">
       <FileType>Document</FileType>
     </CudaCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="Vector.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

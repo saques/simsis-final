@@ -1,6 +1,11 @@
-#include "Vector.h"
+#pragma once
+#include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "math.h"
+
+struct Vec3 {
+	float x, y, z;
+};
 
 __global__ void sum(const Vec3* a, const Vec3* b, Vec3* c) {
 	int i = threadIdx.x;
