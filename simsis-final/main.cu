@@ -16,20 +16,9 @@
 		} \
 
 
-__host__  void writeToFile(Grid<Particle> * grid, std::string path) {
-
-	std::ofstream myfile;
-	myfile.open("example.txt");
-	myfile << "Writing this to a file.\n";
-	myfile << "Writing this to a file.\n";
-	myfile << "Writing this to a file.\n";
-	myfile << "Writing this to a file.\n";
-	myfile.close();
+__host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
 
 	int size = grid->getRows() * grid->getCols();
-
-	std::ofstream file;
-	file.open(path);
 
 	file << size << std::endl;
 	file << std::endl;
@@ -39,9 +28,6 @@ __host__  void writeToFile(Grid<Particle> * grid, std::string path) {
 			Vec3 vec = grid->get(row, col).position;
 			file << vec.x << " " << vec.y << " " << vec.z << std::endl;
 		}
-
-	file.close();
-
 }
 
 //A test to show how to work with classes and CUDA
@@ -98,10 +84,7 @@ int vectorsExample() {
 	return 0;
 }
 
-
-
-
-
+#define DUMP_FILE "particles.dump"
 
 int main(){
 	cudaError_t status;
@@ -121,17 +104,16 @@ int main(){
 	initializePositions <<<dimGrid, dimBlock >>> (g_device, 1);
 	Grid<Particle> * d;
 	d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
-	writeToFile(d, "0.dump");
-
-	for (int i = 1; i < ticks; i++) {
+	
+	std::ofstream file(DUMP_FILE);
+	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
 		moveDownwards << <dimGrid, dimBlock >> > (g_device, 1);
 		d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
 
-		std::stringstream ss;
-		ss << i << ".dump";
-		writeToFile(d, ss.str());
+		writeToFile(d, file);
 	}
+	file.close();
 	
 	status = cudaDeviceReset();
 	return 0;
