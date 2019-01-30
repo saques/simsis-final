@@ -3,6 +3,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <chrono>
+
 #include "cuda_runtime.h"
 
 #include "classes/Particle.hpp"
@@ -15,20 +17,37 @@
 		return 1; \
 		} \
 
-
+#if 1
+#define WRITE_BUFFER_SIZE 1024 * 1024
 __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
-
-	int size = grid->getRows() * grid->getCols();
-
-	file << size << std::endl;
+	static char buf[WRITE_BUFFER_SIZE];
+	char * bufp = (char *) buf;
+	Grid<Particle>* g  = grid;
+	int s = g->getRows() * g->getCols();
+	int len = sprintf(bufp, "%d \n\n", s);
+	bufp += len;
+	for (int row = 0; row < g->getRows(); row++)
+		for (int col = 0; col < g->getCols(); col++) {
+			Vec3 vec = g->get(row, col).position;
+			int len = sprintf(bufp, "%f %f %f \n", vec.x, vec.y, vec.z);
+			bufp += len;
+		}
+	file.write(buf, bufp - buf);
+}
+#else
+__host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
+	Grid<Particle>* g = grid;
+	int s = g->getRows() * g->getCols();
+	file << s << std::endl;
 	file << std::endl;
-
-	for (int row = 0; row < grid->getRows(); row++)
-		for (int col = 0; col < grid->getCols(); col++) {
-			Vec3 vec = grid->get(row, col).position;
+	for (int row = 0; row < g->getRows(); row++)
+		for (int col = 0; col < g->getCols(); col++) {
+			Vec3 vec = g->get(row, col).position;
 			file << vec.x << " " << vec.y << " " << vec.z << std::endl;
 		}
 }
+#endif
+
 
 //A test to show how to work with classes and CUDA
 //See Grid.hpp and test.cu
@@ -100,21 +119,22 @@ int main(){
 	int xBlocks = rows / dimBlock.x + ((rows%dimBlock.x) == 0 ? 0 : 1);
 	dim3 dimGrid = dim3(xBlocks, yBlocks);
 
-
+	std::chrono::high_resolution_clock clock;
+	
 	initializePositions <<<dimGrid, dimBlock >>> (g_device, 1);
 	Grid<Particle> * d;
-	d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
-	
 	std::ofstream file(DUMP_FILE);
+	auto pre = clock.now();
 	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
 		moveDownwards << <dimGrid, dimBlock >> > (g_device, 1);
 		d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
-
 		writeToFile(d, file);
+		delete d;
 	}
+	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - pre);
+	printf("Millis elapsed: %d", elapsed.count());
 	file.close();
-	
 	status = cudaDeviceReset();
 	return 0;
 }
