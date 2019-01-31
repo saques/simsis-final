@@ -14,6 +14,7 @@
 #include "classes/Vector.hpp"
 #include "classes/Grid.hpp"
 #include "kernels/test.cu"
+#include "kernels/grid_kernels.cu"
 
 #define HANDLE_CUDA_ERROR(ERROR) if ((ERROR) != cudaSuccess) { \
 		fprintf(stderr, "Cuda memory error"); \
@@ -94,10 +95,15 @@ int vectorsExample() {
 #define DUMP_FOLDER "dump"
 #define THREAD_COUNT 8
 int main(){
+	
 	cudaError_t status;
 
+	
+	float delta_t = 1.0f/60.0f;
+	int ticks = 10.0f/delta_t;
 	int rows = 100, cols = 100;
-	int ticks = 100;
+	
+	float separation = 1, mass = 0.1, radius = 0.5, g_earth = 9.81, k = 100;
 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
@@ -109,7 +115,7 @@ int main(){
 
 	std::chrono::high_resolution_clock clock;
 	
-	initializePositions <<<dimGrid, dimBlock >>> (g_device, 1);
+	initializePositions <<<dimGrid, dimBlock >>> (g_device, separation, mass, radius);
 	Grid<Particle> * d;
 	
 	auto pre = clock.now();
@@ -150,7 +156,9 @@ int main(){
 
 	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
-		moveDownwards << <dimGrid, dimBlock >> > (g_device, 1);
+		reset << <dimGrid, dimBlock >> > (g_device, g_earth);
+		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation);
+		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t);
 		d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
 		m.lock();
 		q.push(d);
@@ -163,6 +171,8 @@ int main(){
 
 	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - pre);
 	printf("Millis elapsed: %d", elapsed.count());
+
+	
 	status = cudaDeviceReset();
 	return 0;
 }

@@ -7,6 +7,34 @@ struct Vec3 {
 	float x, y, z;
 };
 
+
+
+__host__ __device__ float distance(const Vec3* a, const Vec3* b) {
+	return sqrtf(powf(a->x - b->x, 2) + powf(a->y - b->y, 2) + powf(a->z - b->z, 2));
+}
+
+__host__ __device__ void rel(const Vec3* a, const Vec3* b, Vec3* c) {
+	float mod = distance(a, b);
+
+	c->x = (a->x - b->x) / mod;
+	c->y = (a->y - b->y) / mod;
+	c->z = (a->z - b->z) / mod;
+}
+
+//b <- a+b
+__host__ __device__ void sumf(const Vec3* a, Vec3* b) {
+	b->x += a->x;
+	b->y += a->y;
+	b->z += a->z;
+}
+
+__host__ __device__ void scl(Vec3* a, float c) {
+	a->x *= c;
+	a->y *= c;
+	a->z *= c;
+}
+
+
 __global__ void sum(const Vec3* a, const Vec3* b, Vec3* c) {
 	int i = threadIdx.x;
 	c[i].x = a[i].x + b[i].x;
