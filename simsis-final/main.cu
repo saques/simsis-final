@@ -21,6 +21,8 @@
 		return 1; \
 		} \
 
+#define FRAME_RATE 60
+
 __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
 	int s = grid->getRows() * grid->getCols();
 	char * buf = new char[s * 20 * 3];
@@ -38,72 +40,21 @@ __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
 	delete[] buf;
 }
 
-//A test to show how to work with classes and CUDA
-//See Grid.hpp and test.cu
-int deviceCompatibleClassExample() {
-	Grid<int> * g = new Grid<int>(1, 1);
-	Grid<int> * g_device = Grid<int>::gridcpy(g, Grid<int>::UPLOAD);
-
-	change << <1, 1 >> > (g_device, 0, 0, 4);
-
-	Grid<int> * d = Grid<int>::gridcpy(g_device, Grid<int>::DOWNLOAD);
-
-	std::cout << d->get(0, 0) << std::endl;
-
-	return 0;
-}
-
-int vectorsExample() {
-	Vec3 vec1cpu[100], vec2cpu[100], vec3cpu[100];
-
-	// Init arrays with whatever
-	for (int i = 0; i < 100; i++) vec1cpu[i] = { 2.0f * i, 7.0f * i, 13.0f * i };
-	for (int i = 0; i < 100; i++) vec2cpu[i] = { 3.0f * i, 11.0f * i, 17.0f * i };
-
-	Vec3 *vec1 = { 0 }, *vec2 = { 0 }, *vec3 = { 0 };
-	size_t vecArrSize = 100 * sizeof(Vec3);
-
-	// Alloc 3, 100 Vec3 arrays
-	HANDLE_CUDA_ERROR(cudaMalloc((void **)&vec1, vecArrSize));
-	HANDLE_CUDA_ERROR(cudaMalloc((void **)&vec2, vecArrSize));
-	HANDLE_CUDA_ERROR(cudaMalloc((void **)&vec3, vecArrSize));
-
-	// Memcpy vec1, vec2
-	HANDLE_CUDA_ERROR(cudaMemcpy(vec1, vec1cpu, vecArrSize, cudaMemcpyHostToDevice));
-	HANDLE_CUDA_ERROR(cudaMemcpy(vec2, vec2cpu, vecArrSize, cudaMemcpyHostToDevice));
-
-	// Add vectors in parallel.
-	sum << <1, 100 >> > (vec1, vec2, vec3);
-
-	// Sync device
-	HANDLE_CUDA_ERROR(cudaGetLastError());
-	HANDLE_CUDA_ERROR(cudaDeviceSynchronize());
-	HANDLE_CUDA_ERROR(cudaMemcpy(vec3cpu, vec3, vecArrSize, cudaMemcpyDeviceToHost));
-	// Copy result to CPU
-
-	for (int i = 0; i < 100; i++) {
-		printf("Vec3 {%f, %f, %f} \n", vec3cpu[i].x, vec3cpu[i].y, vec3cpu[i].z);
-	}
-
-	cudaFree(vec1);
-	cudaFree(vec2);
-	cudaFree(vec3);
-
-	return 0;
-}
-
 #define DUMP_FOLDER "dump"
 #define THREAD_COUNT 8
 int main(){
 	
 	cudaError_t status;
 
-	
-	float delta_t = 1.0f/60.0f;
-	int ticks = 10.0f/delta_t;
+	float simulation_t = 10;
+	float delta_t = 0.001f;
 	int rows = 100, cols = 100;
-	
-	float separation = 1, mass = 0.1, radius = 0.5, g_earth = 9.81, k = 100;
+	int frame_rate = 60;
+	float separation = 1, mass = 0.1, radius = 0.5, g_earth = 9.81, k = 1000;
+	int skip_x = 10, skip_y = 10;
+
+	int ticks = simulation_t/delta_t;
+	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
@@ -125,8 +76,9 @@ int main(){
 	std::mutex m;
 
 	CreateDirectory(DUMP_FOLDER, nullptr);
-	auto writer = [&q, ticks, &count, &m] {
-		while (count < ticks) {
+	auto writer = [&q, ticks, dump_each, &count, &m] {
+		int total_count = ticks / dump_each;
+		while (count < total_count) {
 			Grid<Particle>* el = nullptr;
 			int c = 0;
 			m.lock();
@@ -156,15 +108,19 @@ int main(){
 
 	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
-		reset << <dimGrid, dimBlock >> > (g_device, g_earth);
-		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation);
-		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t);
-		d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
-		m.lock();
-		q.push(d);
-		m.unlock();
+		reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
+		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation, skip_x, skip_y);
+		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+		
+		if (i % dump_each == 0) {
+			// Dump to file
+			d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
+			m.lock();
+			q.push(d);
+			m.unlock();
+		}
 	}
-	
+	printf("Waiting for disk operations...");
 	for (int i = 0; i < THREAD_COUNT; i++) {
 		t[i].join();
 	}
