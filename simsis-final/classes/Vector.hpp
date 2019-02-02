@@ -8,14 +8,16 @@ struct Vec3 {
 };
 
 
-
-__host__ __device__ float distance(const Vec3* a, const Vec3* b) {
-	return sqrtf(powf(a->x - b->x, 2) + powf(a->y - b->y, 2) + powf(a->z - b->z, 2));
+__host__ __device__ float dotf(const Vec3* a, const Vec3* b) {
+	return a->x * b->x + a->y * b->y + a->z * b->z;
 }
 
-__host__ __device__ void rel(const Vec3* a, const Vec3* b, Vec3* c) {
-	float mod = distance(a, b);
+__host__ __device__ float distance(const Vec3* a, const Vec3* b) {
+	const Vec3 dif{ a->x - b->x , a->y - b->y, a->z - b->z };
+	return sqrtf(dotf(&dif, &dif));
+}
 
+__host__ __device__ void rel(const Vec3* a, const Vec3* b, Vec3* c, float mod) {
 	c->x = (a->x - b->x) / mod;
 	c->y = (a->y - b->y) / mod;
 	c->z = (a->z - b->z) / mod;

@@ -25,7 +25,7 @@
 
 __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
 	int s = grid->getRows() * grid->getCols();
-	char * buf = new char[s * 20 * 3];
+	char * buf = new char[s * 50 * 3];
 	char * bufp = (char *) buf;
 	
 	int len = sprintf(bufp, "%d \n\n", s);
@@ -102,16 +102,19 @@ int main(){
 	};
 
 	std::thread t[THREAD_COUNT];
-	for (int i = 0; i < THREAD_COUNT; i++) {
-		t[i] = std::thread(writer);
-	}
+	for (int i = 0; i < THREAD_COUNT; i++) t[i] = std::thread(writer);
 
 	for (int i = 0; i < ticks; i++) {
 		//Try moveDownwardsCool!
+		/*reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
+		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation, skip_x, skip_y);
+		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);*/
+		
+		verletPositions << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
 		reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
 		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation, skip_x, skip_y);
-		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
-		
+		verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+
 		if (i % dump_each == 0) {
 			// Dump to file
 			d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
@@ -121,12 +124,15 @@ int main(){
 		}
 	}
 	printf("Waiting for disk operations...");
-	for (int i = 0; i < THREAD_COUNT; i++) {
-		t[i].join();
-	}
+	auto waiting = clock.now();
 
+
+	for (int i = 0; i < THREAD_COUNT; i++) t[i].join();
+
+	auto waited = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - waiting);
+	printf("Wasted %f seconds writing\n", waited / 1000.0);
 	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - pre);
-	printf("Millis elapsed: %d", elapsed.count());
+	printf("Millis elapsed: %d\n", elapsed.count());
 
 	
 	status = cudaDeviceReset();

@@ -15,7 +15,7 @@ __global__ void initializePositions(Grid<Particle> * grid, float separation, flo
 		p.velocity = { 0, 0, 0 };
 		p.force = { 0, 0, 0 };
 		p.mass = mass;
-
+		p.acceleration = { 0, 0, 0 };
 		grid->set(x, y, p);
 	}
 
@@ -77,11 +77,11 @@ __global__ void gridElasticForce(Grid<Particle> * grid, float k, float natural, 
 	for (int i = max(0, x - 1); i <= min(x+1, m_row); i++) {
 		for (int j = max(0,y - 1); j <= min(y+1, m_col); j++) {
 			if (!(i == x && j == y)) {
-				Particle o = grid->get(i, j);
+				Particle * o = grid->getRef(i, j);
 				Vec3 relative;
 
-				float dst = distance(&p.position, &o.position);
-				rel(&p.position, &o.position, &relative);
+				float dst = distance(&p.position, &o->position);
+				rel(&p.position, &o->position, &relative, dst);
 				float elastic_force =  - k * (dst - natural);
 
 				scl(&relative, elastic_force);
@@ -128,6 +128,58 @@ __global__ void updateEuler(Grid<Particle> * grid, float delta_t, int skip_x, in
 	Vec3 delta_x = { p.velocity.x, p.velocity.y, p.velocity.z };
 	scl(&delta_x, delta_t);
 	sumf(&delta_x, &p.position);
+
+	grid->set(x, y, p);
+}
+
+__global__ void verletPositions(Grid<Particle> * grid, float delta_t, int skip_x, int skip_y) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	int m_row = grid->getRows() - 1;
+	int m_col = grid->getCols() - 1;
+	//Borders are fixed
+	if (!checkGridBounds(x, y, m_row, m_col, skip_x, skip_y))
+		return;
+
+	Particle p = grid->get(x, y);
+	Vec3 nextPos = p.position;
+	Vec3 tmpVel = p.velocity;
+	Vec3 tmpAccl = p.acceleration;
+	scl(&tmpVel, delta_t);
+	scl(&tmpAccl, 0.5f * delta_t * delta_t);
+	sumf(&tmpAccl, &tmpVel);
+	sumf(&tmpVel, &nextPos);
+
+	p.position = nextPos;
+	grid->set(x, y, p);
+}
+
+__global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_x, int skip_y) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	int m_row = grid->getRows() - 1;
+	int m_col = grid->getCols() - 1;
+	//Borders are fixed
+	if (!checkGridBounds(x, y, m_row, m_col, skip_x, skip_y))
+		return;
+
+	Particle p = grid->get(x, y);
+	Vec3 currAccl = p.acceleration, nextAccl = p.force;
+	{
+		scl(&nextAccl, 1.0f / p.mass);
+	}
+	Vec3 nextVel = p.velocity;
+	{
+		// nextVel = currVel + 0.5 * (currAccl + nextAccl) * deltaT;
+		Vec3 sumAccl = currAccl;
+		sumf(&nextAccl, &sumAccl);
+		scl(&sumAccl, 0.5f * delta_t);
+		sumf(&sumAccl, &nextVel);
+	}
+	p.velocity = nextVel;
+	p.acceleration = nextAccl;
 
 	grid->set(x, y, p);
 }

@@ -5,6 +5,10 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 
+#define HANDLE_CUDA_ERROR(ERROR) if ((ERROR) != cudaSuccess) { \
+		fprintf(stderr, "Cuda memory error"); \
+		return nullptr; \
+		} \
 
 
 template <class T>
@@ -12,11 +16,12 @@ class Grid {
 
 private:
 
-	T * data;
-	int rows, cols;
+		
 
 public:
-
+	T * data;
+	int rows, cols;
+	
 	__host__ __device__ int getRows() { return rows; }
 
 	__host__ __device__ int getCols() { return cols; }
@@ -63,8 +68,10 @@ public:
 	}
 
 	__host__ __device__ T get(int row, int col) {
-		if (!isOutOfBounds(row, col))
-			return data[row*cols + col];
+		return data[row*cols + col];
+	}
+	__host__ __device__ T*  getRef(int row, int col) {
+		return &data[row*cols + col];
 	}
 
 	static enum copymode {
@@ -100,7 +107,7 @@ public:
 			case DOWNLOAD: 
 
 				ans = (Grid<T>*)malloc(sizeof(Grid<T>));
-				cudaMemcpy(ans, grid, sizeof(Grid<T>), cudaMemcpyDeviceToHost);
+				HANDLE_CUDA_ERROR(cudaMemcpy(ans, grid, sizeof(Grid<T>), cudaMemcpyDeviceToHost));
 
 				//Obtain pointer in device from copyied data
 				T * data_device_ptr;
@@ -111,7 +118,7 @@ public:
 				ans->data = (T*)malloc(size);
 
 				//Copy data back to host
-				cudaMemcpy(ans->data, data_device_ptr, size, cudaMemcpyDeviceToHost);
+				HANDLE_CUDA_ERROR(cudaMemcpy(ans->data, data_device_ptr, size, cudaMemcpyDeviceToHost));
 
 				break;
 
