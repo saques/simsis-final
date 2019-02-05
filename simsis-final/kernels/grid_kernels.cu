@@ -10,6 +10,7 @@ __global__ void initializePositions(Grid<Particle> * grid, float separation, flo
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 	int y = blockIdx.y*blockDim.y + threadIdx.y;
 
+
 	if (x < grid->getRows() && y < grid->getCols()) {
 		Particle p = grid->get(x, y);
 		p.position = { x*separation, y*separation, 0 };
@@ -230,8 +231,8 @@ __global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, i
 	//Add opposing forces in big particle
 	scl(&normalForce, -1);
 	scl(&tangentForce, -1);
-	sumf(&normalForce, &(big->force));
-	sumf(&tangentForce, &(big->force));
+	atomic_sumf(&normalForce, &(big->force));
+	atomic_sumf(&tangentForce, &(big->force));
 
 	grid->set(x + start_x, y + start_y, p);
 

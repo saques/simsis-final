@@ -29,6 +29,12 @@ __host__ __device__ void sumf(const Vec3* a, Vec3* b) {
 	b->z += a->z;
 }
 
+__device__ void atomic_sumf(const Vec3* a, Vec3* b) {
+	atomicAdd(&b->x, a->x);
+	atomicAdd(&b->y, a->y);
+	atomicAdd(&b->z, a->z);
+}
+
 __host__ __device__ void scl(Vec3* a, float c) {
 	a->x *= c;
 	a->y *= c;

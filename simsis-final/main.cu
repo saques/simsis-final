@@ -86,13 +86,13 @@ int main(){
 
 	float simulation_t = 5;
 	float delta_t = 0.0001f;
-	int rows = 100, cols = 100;
+	int rows = 75, cols = 75;
 	int frame_rate = 60;
-	float separation = 0.05, mass = 0.05, radius = 0.05, g_earth = 9.81, k = 10000;
+	float separation = 0.05, mass = 0.05, radius = 0.01, g_earth = 9.81, k = 5000;
 	int skip_x = 1, skip_y = 1;
 
-	float big_mass = 10, big_radius = 0.25, kn = 1E5, kt = 1E4;
-	Vec3 big_init = { rows/2*separation, rows/2*separation, .5 };
+	float big_mass = 10, big_radius = 0.15, kn = 1E5, kt = 1E3;
+	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
 
 	int ticks = simulation_t/delta_t;
 	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
