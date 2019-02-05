@@ -84,11 +84,11 @@ int main(){
 	
 	cudaError_t status;
 
-	float simulation_t = 5;
-	float delta_t = 0.0001f;
+	float simulation_t = 10;
+	float delta_t = 0.00025f;
 	int rows = 75, cols = 75;
 	int frame_rate = 60;
-	float separation = 0.05, mass = 0.05, radius = 0.01, g_earth = 9.81, k = 5000;
+	float separation = 0.05, mass = 0.005, radius = 0.01, g_earth = 9.81, k = 1500;
 	int skip_x = 1, skip_y = 1;
 
 	float big_mass = 10, big_radius = 0.15, kn = 1E5, kt = 1E3;
