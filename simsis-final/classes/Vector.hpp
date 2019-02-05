@@ -7,7 +7,6 @@ struct Vec3 {
 	float x, y, z;
 };
 
-
 __host__ __device__ float dotf(const Vec3* a, const Vec3* b) {
 	return a->x * b->x + a->y * b->y + a->z * b->z;
 }
@@ -36,6 +35,11 @@ __host__ __device__ void scl(Vec3* a, float c) {
 	a->z *= c;
 }
 
+__host__ __device__ void difff(const Vec3* a, const Vec3* b, Vec3* c) {
+	c->x = a->x - b->x;
+	c->y = a->y - b->y;
+	c->z = a->z - b->z;
+}
 
 __global__ void sum(const Vec3* a, const Vec3* b, Vec3* c) {
 	int i = threadIdx.x;

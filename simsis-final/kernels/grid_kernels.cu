@@ -3,6 +3,7 @@
 #include "cuda_runtime.h"
 #include "../classes/Grid.hpp"
 #include "../classes/Vector.hpp"
+#include "../classes/Particle.hpp"
 
 //Initialize positions of all particles in the grid
 __global__ void initializePositions(Grid<Particle> * grid, float separation, float mass, float radius) {
@@ -16,6 +17,7 @@ __global__ void initializePositions(Grid<Particle> * grid, float separation, flo
 		p.force = { 0, 0, 0 };
 		p.mass = mass;
 		p.acceleration = { 0, 0, 0 };
+		p.radius = radius;
 		grid->set(x, y, p);
 	}
 
@@ -182,4 +184,55 @@ __global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_
 	p.acceleration = nextAccl;
 
 	grid->set(x, y, p);
+}
+
+__global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, int start_x, int start_y, int end_x, int end_y, float kn, float kt) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	if (x < 0 || y < 0 || x + start_x >= grid->getRows() || y + start_y >= grid->getCols())
+		return;
+
+	Particle p = grid->get(x + start_x, y + start_y);
+
+	Vec3 p_pos = p.position;
+	Vec3 o_pos = big->position;
+
+	float dist = distance(&p_pos, &o_pos);
+
+	if (dist >= big->radius + p.radius)
+		return;
+
+	float exn = (o_pos.x - p_pos.x) / dist;
+	float eyn = (o_pos.y - p_pos.y) / dist;
+	float ezn = (o_pos.z - p_pos.z) / dist;
+
+	Vec3 normalForce = { exn, eyn, ezn };
+	Vec3 tangentForce = { -ezn, -eyn, exn };
+
+	float overlap = p.radius + big->radius - dist;
+
+	float normalForceMag = (-1) * kn * overlap;
+
+	Vec3 p_vel = p.velocity;
+	Vec3 o_vel = big->velocity;
+	Vec3 vel_rel;
+	difff(&p_vel, &o_vel, &vel_rel);
+
+	float tanForceMag = -kt * overlap * dotf(&vel_rel, &tangentForce);
+	scl(&tangentForce, tanForceMag);
+	
+	//Add forces to particle in grid
+	scl(&normalForce, normalForceMag);
+	sumf(&normalForce, &p.force);
+	sumf(&tangentForce, &p.force);
+
+	//Add opposing forces in big particle
+	scl(&normalForce, -1);
+	scl(&tangentForce, -1);
+	sumf(&normalForce, &(big->force));
+	sumf(&tangentForce, &(big->force));
+
+	grid->set(x + start_x, y + start_y, p);
+
 }

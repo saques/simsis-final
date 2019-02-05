@@ -23,22 +23,60 @@
 
 #define FRAME_RATE 60
 
-__host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file) {
-	int s = grid->getRows() * grid->getCols();
-	char * buf = new char[s * 50 * 3];
+__host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file, Particle * big) {
+	//TODO: Take a vector of particles for the big particle
+	int s = grid->getRows() * grid->getCols() + 1;
+	char * buf = new char[s * 50 * 4];
 	char * bufp = (char *) buf;
-	
-	int len = sprintf(bufp, "%d \n\n", s);
+
+	int len = sprintf(bufp, "%d \n\n%f %f %f %f\n", s, big->position.x, big->position.y, big->position.z, big->radius);
 	bufp += len;
+
 	for (int row = 0; row < grid->getRows(); row++)
 		for (int col = 0; col < grid->getCols(); col++) {
-			Vec3 vec = grid->get(row, col).position;
-			int len = sprintf(bufp, "%f %f %f\n", vec.x, vec.y, vec.z);
+			Particle p = grid->get(row, col);
+			Vec3 vec = p.position;
+			int len = sprintf(bufp, "%f %f %f %f\n", vec.x, vec.y, vec.z, p.radius);
 			bufp += len;
 		}
 	file.write(buf, bufp - buf);
 	delete[] buf;
 }
+
+__host__ void computeBigMassForces(Particle * p_host, Grid<Particle> * g_device, float g, float separation, float kn, float kt) {
+
+	p_host->force = { 0 ,0 , (-g) * p_host->mass };
+
+
+	Particle * p_device;
+	cudaMalloc((void **)&(p_device), sizeof(Particle));
+	cudaMemcpy(p_device, p_host, sizeof(Particle), cudaMemcpyHostToDevice);
+
+	//Interact grid and particle
+
+	int x_start = (int)((p_host->position.x - p_host->radius) / separation);
+	int y_start = (int)((p_host->position.y - p_host->radius) / separation);
+
+	int x_end = x_start + (int)(2 * p_host->radius / separation);
+	int y_end = y_start + (int)(2 * p_host->radius / separation);
+
+
+	dim3 dimBlock = dim3(10, 10);
+	int yBlocks = (y_end - y_start) / dimBlock.y + (((y_end - y_start) % dimBlock.y) == 0 ? 0 : 1);
+	int xBlocks = (x_end - x_start) / dimBlock.x + (((x_end - x_start) % dimBlock.x) == 0 ? 0 : 1);
+	dim3 dimGrid = dim3(xBlocks, yBlocks);
+
+	//__global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, int start_x, int start_y, int end_x, int end_y, float kn) {
+
+	interactGridAndParticle << <dimGrid, dimBlock >> > (g_device, p_device, x_start, y_start, x_end, y_end, kn, kt);
+
+
+	cudaMemcpy(p_host, p_device, sizeof(Particle), cudaMemcpyDeviceToHost);
+	cudaFree(p_device);
+}
+
+
+
 
 #define DUMP_FOLDER "dump"
 #define THREAD_COUNT 8
@@ -46,18 +84,23 @@ int main(){
 	
 	cudaError_t status;
 
-	float simulation_t = 10;
-	float delta_t = 0.001f;
+	float simulation_t = 5;
+	float delta_t = 0.0001f;
 	int rows = 100, cols = 100;
 	int frame_rate = 60;
-	float separation = 1, mass = 0.1, radius = 0.5, g_earth = 9.81, k = 1000;
-	int skip_x = 10, skip_y = 10;
+	float separation = 0.05, mass = 0.05, radius = 0.05, g_earth = 9.81, k = 10000;
+	int skip_x = 1, skip_y = 1;
+
+	float big_mass = 10, big_radius = 0.25, kn = 1E5, kt = 1E4;
+	Vec3 big_init = { rows/2*separation, rows/2*separation, .5 };
 
 	int ticks = simulation_t/delta_t;
 	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
+
+	Particle * big = newParticle(big_init, big_mass, big_radius);
 
 	dim3 dimBlock = dim3(10, 10);
 	int yBlocks = cols / dimBlock.y + ((cols%dimBlock.y) == 0 ? 0 : 1);
@@ -76,7 +119,7 @@ int main(){
 	std::mutex m;
 
 	CreateDirectory(DUMP_FOLDER, nullptr);
-	auto writer = [&q, ticks, dump_each, &count, &m] {
+	auto writer = [&q, ticks, dump_each, &count, &m, big] {
 		int total_count = ticks / dump_each;
 		while (count < total_count) {
 			Grid<Particle>* el = nullptr;
@@ -91,7 +134,7 @@ int main(){
 			m.unlock();
 			if (el != nullptr) {
 				std::ofstream file(std::string(DUMP_FOLDER) + "/" + std::to_string(c) + ".dump");
-				writeToFile(el, file);
+				writeToFile(el, file, big);
 				delete el;
 				file.close();
 			}
@@ -113,7 +156,9 @@ int main(){
 		verletPositions << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
 		reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
 		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation, skip_x, skip_y);
+		computeBigMassForces(big, g_device, g_earth, separation, kn, kt);
 		verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+		updateParticleEuler(big, delta_t);
 
 		if (i % dump_each == 0) {
 			// Dump to file
