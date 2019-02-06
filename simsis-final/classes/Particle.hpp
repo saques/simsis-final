@@ -12,17 +12,23 @@ struct Particle {
 	float radius;
 };
 
-Particle * newParticle(Vec3 initial_position, float mass, float radius) {
-	Particle * ans = (Particle *)malloc(sizeof(Particle));
-	ans->position.x = initial_position.x;
-	ans->position.y = initial_position.y;
-	ans->position.z = initial_position.z;
+Particle * newParticles(Vec3 initial_position, float mass, float radius, int size, float separation) {
+	Particle * ans = (Particle *)malloc(sizeof(Particle)*size);
 
-	ans->velocity = { 0,0,0 };
-	ans->force = { 0,0,0 };
+	for (int i = 0; i < size; i++) {
 
-	ans->radius = radius;
-	ans->mass = mass;
+		Particle p = ans[i];
+
+		p.position = { initial_position.x + separation * i , initial_position.y, initial_position.z };
+
+		p.velocity = { 0,0,0 };
+		p.force = { 0,0,0 };
+
+		p.radius = radius;
+		p.mass = mass;
+
+		ans[i] = p;
+	}
 
 	return ans;
 }

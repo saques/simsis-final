@@ -5,6 +5,19 @@
 #include "../classes/Vector.hpp"
 #include "../classes/Particle.hpp"
 
+__device__ void applyElasticForce(Particle * p, Particle * o, float k, float natural) {
+
+	Vec3 relative;
+
+	float dst = distance(&p->position, &o->position);
+	rel(&p->position, &o->position, &relative, dst);
+	float elastic_force = -k * (dst - natural);
+
+	scl(&relative, elastic_force);
+	sumf(&relative, &p->force);
+
+}
+
 //Initialize positions of all particles in the grid
 __global__ void initializePositions(Grid<Particle> * grid, float separation, float mass, float radius) {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
@@ -81,14 +94,7 @@ __global__ void gridElasticForce(Grid<Particle> * grid, float k, float natural, 
 		for (int j = max(0,y - 1); j <= min(y+1, m_col); j++) {
 			if (!(i == x && j == y)) {
 				Particle * o = grid->getRef(i, j);
-				Vec3 relative;
-
-				float dst = distance(&p.position, &o->position);
-				rel(&p.position, &o->position, &relative, dst);
-				float elastic_force =  - k * (dst - natural);
-
-				scl(&relative, elastic_force);
-				sumf(&relative, &p.force);
+				applyElasticForce(&p, o, k, natural);
 			}
 		}
 	}
@@ -187,7 +193,7 @@ __global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_
 	grid->set(x, y, p);
 }
 
-__global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, int start_x, int start_y, int end_x, int end_y, float kn, float kt) {
+__global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, int idx, int start_x, int start_y, int end_x, int end_y, float kn, float kt) {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 	int y = blockIdx.y*blockDim.y + threadIdx.y;
 
@@ -197,11 +203,11 @@ __global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, i
 	Particle p = grid->get(x + start_x, y + start_y);
 
 	Vec3 p_pos = p.position;
-	Vec3 o_pos = big->position;
+	Vec3 o_pos = big[idx].position;
 
 	float dist = distance(&p_pos, &o_pos);
 
-	if (dist >= big->radius + p.radius)
+	if (dist >= big[idx].radius + p.radius)
 		return;
 
 	float exn = (o_pos.x - p_pos.x) / dist;
@@ -211,12 +217,12 @@ __global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, i
 	Vec3 normalForce = { exn, eyn, ezn };
 	Vec3 tangentForce = { -ezn, -eyn, exn };
 
-	float overlap = p.radius + big->radius - dist;
+	float overlap = p.radius + big[idx].radius - dist;
 
 	float normalForceMag = (-1) * kn * overlap;
 
 	Vec3 p_vel = p.velocity;
-	Vec3 o_vel = big->velocity;
+	Vec3 o_vel = big[idx].velocity;
 	Vec3 vel_rel;
 	difff(&p_vel, &o_vel, &vel_rel);
 
@@ -231,9 +237,64 @@ __global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, i
 	//Add opposing forces in big particle
 	scl(&normalForce, -1);
 	scl(&tangentForce, -1);
-	atomic_sumf(&normalForce, &(big->force));
-	atomic_sumf(&tangentForce, &(big->force));
+	atomic_sumf(&normalForce, &(big[idx].force));
+	atomic_sumf(&tangentForce, &(big[idx].force));
 
 	grid->set(x + start_x, y + start_y, p);
 
+}
+
+
+
+//This this assumes that particles are in a line
+__global__ void interactBigParticles(Particle * particles, int size, float natural, float k) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+
+	if (x < 0 || x >= size)
+		return;
+
+	Particle p = particles[x];
+
+	if (x != 0) {
+		Particle * left = &particles[x - 1];
+		applyElasticForce(&p, left, k, natural);
+	}
+
+	if (x != size - 1) {
+		Particle * right = &particles[x + 1];
+		applyElasticForce(&p, right, k, natural);
+	}
+	particles[x] = p;
+}
+
+__global__ void resetBigParticles(Particle * particles, int size, float g) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+
+	if (x < 0 || x >= size)
+		return;
+
+	Particle p = particles[x];
+
+	p.force = { 0 ,0 , (-g) * p.mass };
+
+	particles[x] = p;
+}
+
+__global__ void updateEulerBigParticles(Particle * particles, int size, float delta_t) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+
+	if (x < 0 || x >= size)
+		return;
+
+	Particle p = particles[x];
+
+	Vec3 delta_v = { p.force.x / p.mass, p.force.y / p.mass, p.force.z / p.mass };
+	scl(&delta_v, delta_t);
+	sumf(&delta_v, &p.velocity);
+
+	Vec3 delta_x = { p.velocity.x, p.velocity.y, p.velocity.z };
+	scl(&delta_x, delta_t);
+	sumf(&delta_x, &p.position);
+
+	particles[x] = p;
 }
