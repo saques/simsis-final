@@ -2,10 +2,27 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "math.h"
+#include <cstdarg>
 
 struct Vec3 {
 	float x, y, z;
 };
+
+__host__ __device__ Vec3 sumd(const Vec3 &a, const Vec3 &b) {
+	return Vec3{
+		a.x + b.x,
+		a.y + b.y,
+		a.z + b.z
+	};
+}
+
+__host__ __device__ Vec3 scld(float scale, const Vec3 &a) {
+	return Vec3{
+		a.x * scale,
+		a.y * scale,
+		a.z * scale
+	};
+}
 
 __host__ __device__ float dotf(const Vec3* a, const Vec3* b) {
 	return a->x * b->x + a->y * b->y + a->z * b->z;
