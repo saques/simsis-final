@@ -7,7 +7,7 @@
 
 
 struct Particle {
-	Vec3 position = {}, velocity, force, acceleration = {};
+	Vec3 position = {}, velocity, force, acceleration = {}, prev_pos = {};
 	float mass;
 	float radius;
 };
@@ -29,6 +29,9 @@ Particle * newParticles(Vec3 initial_position, float mass, float radius, int siz
 
 		ans[i] = p;
 	}
+
+	ans->prev_pos = ans->position;
+	ans->acceleration = { 0, 0, 0 };
 
 	return ans;
 }

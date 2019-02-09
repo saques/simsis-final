@@ -6,7 +6,8 @@
 #include "device_launch_parameters.h"
 
 #define HANDLE_CUDA_ERROR(ERROR) if ((ERROR) != cudaSuccess) { \
-		fprintf(stderr, "Cuda memory error"); \
+		fprintf(stderr,"GPUassert: %s\n", cudaGetErrorString(ERROR)); \
+		fprintf(stderr, "Cuda memory error\n"); \
 		return nullptr; \
 		} \
 

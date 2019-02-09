@@ -5,7 +5,7 @@
 #include "../classes/Vector.hpp"
 #include "../classes/Particle.hpp"
 
-__device__ void applyElasticForce(Particle * p, Particle * o, float k, float natural) {
+__device__ void applyElasticForce(Particle * p, Particle * o, float k, float b, float natural) {
 
 	Vec3 relative;
 
@@ -16,6 +16,11 @@ __device__ void applyElasticForce(Particle * p, Particle * o, float k, float nat
 	scl(&relative, elastic_force);
 	sumf(&relative, &p->force);
 
+	Vec3 damp = { 0 };
+	rel(&p->velocity, &o->velocity, &damp, 1);
+	scl(&damp, -b);
+	sumf(&damp, &relative);
+	sumf(&relative, &p->force);
 }
 
 //Initialize positions of all particles in the grid
@@ -75,7 +80,7 @@ __device__ bool checkGridBounds(int row, int col, int m_row, int m_col, int skip
 	
 
 //Compute elastic force
-__global__ void gridElasticForce(Grid<Particle> * grid, float k, float natural, int skip_x, int skip_y) {
+__global__ void gridElasticForce(Grid<Particle> * grid, float k, float b, float natural, int skip_x, int skip_y) {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 	int y = blockIdx.y*blockDim.y + threadIdx.y;
 
@@ -89,15 +94,16 @@ __global__ void gridElasticForce(Grid<Particle> * grid, float k, float natural, 
 	//from this memory (100x faster than global GPU memory) the particles
 	//in the following loop
 	Particle p = grid->get(x, y);
-
+	
 	for (int i = max(0, x - 1); i <= min(x+1, m_row); i++) {
 		for (int j = max(0,y - 1); j <= min(y+1, m_col); j++) {
 			if (!(i == x && j == y)) {
-				Particle * o = grid->getRef(i, j);
-				applyElasticForce(&p, o, k, natural);
+				Particle o = grid->get(i, j);
+				applyElasticForce(&p, &o, k, b, natural);
 			}
 		}
 	}
+	__syncthreads();
 	grid->set(x, y, p);
 }
 
@@ -175,6 +181,8 @@ __global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_
 		return;
 
 	Particle p = grid->get(x, y);
+	
+	// Velocity verlet
 	Vec3 currAccl = p.acceleration, nextAccl = p.force;
 	{
 		scl(&nextAccl, 1.0f / p.mass);
@@ -190,6 +198,17 @@ __global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_
 	p.velocity = nextVel;
 	p.acceleration = nextAccl;
 
+	// Traditional Verlet
+	// x(n+1) = 2 * x(n) - x(n - 1) + a(n) * delta_t^2
+	//Vec3 nextPos = p.position;
+	//scl(&nextPos, 2);							// currPos term
+	//scl(&p.prev_pos, -1);						// prevPos term
+	//scl(&p.acceleration, delta_t * delta_t);	// accel term
+	//sumf(&p.prev_pos, &nextPos);
+	//sumf(&p.acceleration, &nextPos);
+
+	//p.prev_pos = p.position;
+	//p.position = nextPos;
 	grid->set(x, y, p);
 }
 
@@ -247,7 +266,7 @@ __global__ void interactGridAndParticle(Grid<Particle> * grid, Particle * big, i
 
 
 //This this assumes that particles are in a line
-__global__ void interactBigParticles(Particle * particles, int size, float natural, float k) {
+__global__ void interactBigParticles(Particle * particles, int size, float natural, float k, float b) {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 
 	if (x < 0 || x >= size)
@@ -257,12 +276,12 @@ __global__ void interactBigParticles(Particle * particles, int size, float natur
 
 	if (x != 0) {
 		Particle * left = &particles[x - 1];
-		applyElasticForce(&p, left, k, natural);
+		applyElasticForce(&p, left, k, b, natural);
 	}
 
 	if (x != size - 1) {
 		Particle * right = &particles[x + 1];
-		applyElasticForce(&p, right, k, natural);
+		applyElasticForce(&p, right, k, b, natural);
 	}
 	particles[x] = p;
 }
