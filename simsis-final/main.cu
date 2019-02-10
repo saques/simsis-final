@@ -110,11 +110,11 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 	float delta_t = 0.001f;
 	int rows = 50, cols = 50;
 	int frame_rate = 60;
-	float separation = 0.05, mass = 0.1, radius = 0.05, g_earth = 9.81, k = 5E3, b = 2 * sqrtf( mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
+	float separation = 0.05, mass = 0.1, radius = 0.05, g_earth = 9.81, k = 1E3, b =  2 * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
 	int skip_x = 1, skip_y = 1;
 
-	printf("Particles: \n\tmass: %f\t k=%f\t b=%f\n", mass, k, b);
-	float big_mass = 1, big_radius = 0.15, kn = 1E3, kt = 1E3, separation_big = big_radius, kbig = 1E3, bbig = 1 * sqrtf(big_mass * kbig);
+	printf("Particles: \n\tdelta_t: %f\tmass: %f\t k=%f\t b=%f\n", delta_t, mass, k, b);
+	float big_mass = 5, big_radius = 0.15, kn = 1E3, kt = 1E3, separation_big = big_radius, kbig = k, bbig = 0; b;
 	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
 
 	int ticks = simulation_t/delta_t;
@@ -175,7 +175,7 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 
 		///-----------EULER------------
 		/*reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
-		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, separation, skip_x, skip_y);
+		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
 		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);*/
 		
 		///-----------VERLET-----------
@@ -184,13 +184,13 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
 		computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
 		updateEulerBigMass(big, big_size, delta_t);
-		verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
-		*/
+		verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);*/
+		
 
 		///------------RK4-------------
-		reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
 		computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
 		updateEulerBigMass(big, big_size, delta_t);
+		initialVelAccel << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
 		rk4 << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
 		
 		

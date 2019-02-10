@@ -24,6 +24,14 @@ __host__ __device__ Vec3 scld(float scale, const Vec3 &a) {
 	};
 }
 
+__host__ __device__ Vec3 divd(const Vec3 &a, float scale) {
+	return Vec3{
+		a.x / scale,
+		a.y / scale,
+		a.z / scale
+	};
+}
+
 __host__ __device__ float dotf(const Vec3* a, const Vec3* b) {
 	return a->x * b->x + a->y * b->y + a->z * b->z;
 }

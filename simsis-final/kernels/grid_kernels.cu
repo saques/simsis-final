@@ -14,7 +14,6 @@ __device__ void applyElasticForce(Particle * p, Particle * o, float k, float b, 
 	float elastic_force = -k * (dst - natural);
 
 	scl(&relative, elastic_force);
-	sumf(&relative, &p->force);
 
 	Vec3 damp = { 0 };
 	rel(&p->velocity, &o->velocity, &damp, 1);
@@ -33,8 +32,8 @@ __global__ void initializePositions(Grid<Particle> * grid, float separation, flo
 		Particle p = grid->get(x, y);
 		p.position = { x*separation, y*separation, 0 };
 		p.velocity = { 0, 0, 0 };
-		p.force = { 0, 0, 0 };
 		p.mass = mass;
+		p.force = { 0, 0, -9.81f*p.mass };
 		p.acceleration = { 0, 0, 0 };
 		p.radius = radius;
 		grid->set(x, y, p);
@@ -174,14 +173,13 @@ struct VelAccel {
 	Vec3 vel, accel;
 };
 
-__device__ VelAccel calcVel(Grid<Particle> * grid, VelAccel pair, int x, int y, float delta_t, float k, float b, float natural, float mass) {
+__device__ VelAccel calcVel(Grid<Particle> * grid, const VelAccel &pair, int x, int y, float delta_t, float k, float b, float natural, float mass) {
 	// A(n)	= (-k * x(x) - b * v(n)) / mass
 	// V(n+1) = V(n) + A(n) * delta_t
 	int m_row = grid->getRows() - 1;
 	int m_col = grid->getCols() - 1;
 	Particle p = grid->get(x, y);
-	//p.force = {0, 0, -gravity};
-	p.position = sumd(p.position, scld(delta_t, pair.vel));
+	p.position = sumd(p.position, sumd(scld(delta_t, pair.vel), scld(0.5f * delta_t * delta_t, pair.accel)));
 	p.velocity = sumd(p.velocity, scld(delta_t, pair.accel));
 	
 	// GetAccel
@@ -189,14 +187,16 @@ __device__ VelAccel calcVel(Grid<Particle> * grid, VelAccel pair, int x, int y, 
 		for (int j = max(0, y - 1); j <= min(y + 1, m_col); j++) {
 			if (!(i == x && j == y)) {
 				Particle o = grid->get(i, j);
+				o.position = sumd(o.position, sumd(scld(delta_t, o.velocity), scld(0.5f * delta_t * delta_t, o.acceleration)));
+				o.velocity = sumd(o.velocity, scld(delta_t, o.acceleration));
 				applyElasticForce(&p, &o, k, b, natural);
 			}
 		}
 	}
 
 	return VelAccel{
-		p.velocity,					//vel
-		scld(1.0 / mass, p.force)	//accel
+		p.velocity,			//vel
+		divd(p.force, mass)	//accel
 	};
 }
 
@@ -211,39 +211,37 @@ __global__ void rk4(Grid<Particle> * grid, float delta_t, int skip_x, int skip_y
 		return;
 
 	Particle p = grid->get(x, y);
-	VelAccel init = { 0 };
-	VelAccel k1 = calcVel(grid, init, x, y, 0, k, b, natural, mass); 
-	VelAccel k1Aux{
-		scld(0.5f, k1.vel),
-		scld(0.5f, k1.accel)
-	};
-	VelAccel k2 = calcVel(grid, k1Aux, x, y, 0.5f * delta_t, k, b, natural, mass); 
-	VelAccel k2Aux{
-		scld(0.5f, k2.vel),
-		scld(0.5f, k2.accel)
-	};
-	VelAccel k3 = calcVel(grid, k2Aux, x, y, 0.5f * delta_t, k, b, natural, mass);
+
+	VelAccel init = { 0, 0 };
+	VelAccel k1 = calcVel(grid, init, x, y, 0, k, b, natural, mass);
+	VelAccel k2 = calcVel(grid, k1, x, y, 0.5f * delta_t, k, b, natural, mass);
+	VelAccel k3 = calcVel(grid, k2, x, y, 0.5f * delta_t, k, b, natural, mass);
 	VelAccel k4 = calcVel(grid, k3, x, y, delta_t, k, b, natural, mass); 
 
-	Vec3 v1 = scld(delta_t, k1.vel);
-	Vec3 v2 = scld(delta_t, k2.vel);
-	Vec3 v3 = scld(delta_t, k3.vel);
-	Vec3 v4 = scld(delta_t, k4.vel);
-
-	// RK4: x(n+1) = x(n) + (k1 + 2 * k2 + 2 * k3 + k4) / 6
-	Vec3 nextPos = sumd(p.position, scld(1 / 6.0f, sumd(v1, sumd(scld(2, v2), sumd(scld(2, v3), v4)))));
-
-	Vec3 a1 = scld(delta_t, k1.accel);
-	Vec3 a2 = scld(delta_t, k2.accel);
-	Vec3 a3 = scld(delta_t, k3.accel);
-	Vec3 a4 = scld(delta_t, k4.accel);
-
-	Vec3 nextVel = sumd(p.velocity, scld(1 / 6.0f, sumd(a1, sumd(scld(2, a2), sumd(scld(2, a3), a4)))));
-	p.position = nextPos;
-	p.velocity = nextVel;
+	// RK4: x(n+1) = x(n) + (k1 + 2 * (k2 + k3) + k4) delta_t/ 6
+	p.position = sumd(p.position, scld(delta_t / 6, sumd(k1.vel, sumd(scld(2, sumd(k2.vel, k3.vel)), k4.vel))));
+	p.velocity = sumd(p.velocity, scld(delta_t / 6, sumd(k1.accel, sumd(scld(2, sumd(k2.accel, k3.accel)), k4.accel))));
+	p.force = { 0, 0, -gravity*p.mass };
 	__syncthreads();
 	grid->set(x, y, p);
 	return;
+}
+
+__global__ void initialVelAccel(Grid<Particle> * grid, float delta_t, int skip_x, int skip_y, float k, float b, float natural, float mass, float gravity) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	int m_row = grid->getRows() - 1;
+	int m_col = grid->getCols() - 1;
+	//Borders are fixed
+	if (!checkGridBounds(x, y, m_row, m_col, skip_x, skip_y))
+		return;
+	VelAccel init = { 0, 0 };
+	VelAccel currentVelAccel = calcVel(grid, init, x, y, 0, k, b, natural, mass);
+	Particle p = grid->get(x, y);
+	p.acceleration = currentVelAccel.accel;
+	__syncthreads();
+	grid->set(x, y, p);
 }
 
 __global__ void verletVelocities(Grid<Particle> * grid, float delta_t, int skip_x, int skip_y) {
