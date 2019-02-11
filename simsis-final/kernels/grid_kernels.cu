@@ -352,11 +352,19 @@ __global__ void interactBigParticles(Particle * particles, int size, float natur
 		Particle * left = &particles[x - 1];
 		applyElasticForce(&p, left, k, b, natural);
 	}
+	else if (size > 2) {
+		Particle * end = &particles[size - 1];
+		applyElasticForce(&p, end, k, b, natural*(size - 1));
+	}
 
 	if (x != size - 1) {
 		Particle * right = &particles[x + 1];
 		applyElasticForce(&p, right, k, b, natural);
+	} else if (size > 2) {
+		Particle * begin = &particles[0];
+		applyElasticForce(&p, begin, k, b, natural*(size - 1));
 	}
+
 	particles[x] = p;
 }
 

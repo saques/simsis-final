@@ -163,10 +163,11 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	float separation_big = atof(GetOption(argv, argc, "--sbig", std::to_string(big_radius).c_str()));
 	float kbig = atof(GetOption(argv, argc, "--kbig", std::to_string(1E7).c_str()));
 	float bbig = atof(GetOption(argv, argc, "--bbig", std::to_string(0).c_str()));
+	float zinit = atof(GetOption(argv, argc, "--zinit", std::to_string(3).c_str()));
 	int big_size = atoi(GetOption(argv, argc, "--big-size", "2"));
+	bool sloped = atoi(GetOption(argv, argc, "--sloped", "0")) ? true : false;
 
 	
-	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
 	int ticks = simulation_t/delta_t;
 	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
 	Stats * stats = (Stats *) malloc((ticks/dump_each) * sizeof(Stats));
@@ -174,7 +175,7 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
 
-	Particle * big = newParticles(big_init, big_mass, big_radius, big_size, separation_big);
+	Particle * big = newParticles(big_mass, big_radius, big_size, separation_big, rows, cols, big_size, zinit, separation, sloped);
 
 	dim3 dimBlock = dim3(16, 16);
 	int yBlocks = cols / dimBlock.y + ((cols%dimBlock.y) == 0 ? 0 : 1);

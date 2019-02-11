@@ -4,7 +4,7 @@
 #include "device_launch_parameters.h"
 #include "Vector.hpp"
 
-
+#define SQRT_2 sqrtf(2)
 
 struct Particle {
 	Vec3 position = {}, velocity, force, acceleration = {}, prev_pos = {};
@@ -12,14 +12,19 @@ struct Particle {
 	float radius;
 };
 
-Particle * newParticles(Vec3 initial_position, float mass, float radius, int size, float separation) {
+Particle * newParticles(float mass, float radius, int size, float separation, int rows, int cols, int big_size, float zinit, float grid_separation, bool sloped) {
+
+	float sep_x = sloped ? separation / SQRT_2 : separation, sep_z = sloped ? separation / SQRT_2 : 0;
+
+	Vec3 initial_position = { rows / 2 * grid_separation - (big_size - 1)*sep_x / 2, cols / 2 * grid_separation, zinit  - (big_size - 1)*sep_z };
+
 	Particle * ans = (Particle *)malloc(sizeof(Particle)*size);
 
 	for (int i = 0; i < size; i++) {
 
 		Particle p = ans[i];
 
-		p.position = { initial_position.x + separation * i , initial_position.y, initial_position.z };
+		p.position = { initial_position.x + sep_x * i , initial_position.y, initial_position.z + sep_z*i};
 
 		p.velocity = { 0,0,0 };
 		p.force = { 0,0,0 };
