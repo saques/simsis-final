@@ -82,6 +82,9 @@
       <FileType>Document</FileType>
     </CudaCompile>
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="classes\Stats.hpp" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
     <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 10.0.targets" />

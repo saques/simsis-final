@@ -14,6 +14,7 @@
 #include "classes/Grid.hpp"
 #include "kernels/test.cu"
 #include "kernels/grid_kernels.cu"
+#include "classes/Stats.hpp"
 
 #define HANDLE_CUDA_ERROR(ERROR) if ((ERROR) != cudaSuccess) { \
 		fprintf(stderr, "Cuda memory error\n"); \
@@ -46,6 +47,18 @@ __host__  void writeToFile(Grid<Particle> * grid, std::ofstream &file, Particle 
 		}
 	file.write(buf, bufp - buf);
 	delete[] buf;
+}
+
+__host__  void writeStats(Stats * stats, int size, std::string path) {
+	std::ofstream file;
+	file.open(path);
+
+	for (int i = 0; i < size; i++) {
+		Stats s = stats[i];
+		file << s.COM_height << " " << s.deformation << " " << s.big_energy << " " << s.grid_energy << std::endl;
+	}
+
+	file.close();
 }
 
 __host__ void computeBigMassForces(Particle * p_host, int p_size, Grid<Particle> * g_device, float g, float separation, float kn, float kt, float natural, float kbig, float bbig) {
@@ -82,7 +95,7 @@ __host__ void computeBigMassForces(Particle * p_host, int p_size, Grid<Particle>
 }
 
 
-__host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
+__host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t, bool dump, Stats * stats, int tick, float big_mass_separation, float g, int dump_each) {
 
 	Particle * p_device;
 	cudaMalloc((void **)&(p_device), sizeof(Particle)*p_size);
@@ -92,6 +105,18 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 
 	cudaMemcpy(p_host, p_device, sizeof(Particle)*p_size, cudaMemcpyDeviceToHost);
 	cudaFree(p_device);
+
+	if (dump) {
+		Stats stat = stats[tick/dump_each];
+
+		//float COM_height, deformation, big_energy;
+		stat.resetBig_energy();
+		stat.setCOM_height(p_host, p_size);
+		stat.setDeformation(p_host, p_size, big_mass_separation);
+		stat.addBig_energy(p_host, p_size, g);
+
+		stats[tick/dump_each] = stat;
+	}
 }
 
 
@@ -135,21 +160,23 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	float big_radius = atof(GetOption(argv, argc, "--big-radius", "0.15"));
 	float kn = atof(GetOption(argv, argc, "--kn", "1E5"));
 	float kt = atof(GetOption(argv, argc, "--kt", "1E3"));
-	float separation_big = atof(GetOption(argv, argc, "--kn", std::to_string(big_radius).c_str()));
+	float separation_big = atof(GetOption(argv, argc, "--sbig", std::to_string(big_radius).c_str()));
 	float kbig = atof(GetOption(argv, argc, "--kbig", std::to_string(1E7).c_str()));
 	float bbig = atof(GetOption(argv, argc, "--bbig", std::to_string(0).c_str()));
 	int big_size = atoi(GetOption(argv, argc, "--big-size", "2"));
+
 	
 	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
 	int ticks = simulation_t/delta_t;
 	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
+	Stats * stats = (Stats *) malloc((ticks/dump_each) * sizeof(Stats));
 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
 
 	Particle * big = newParticles(big_init, big_mass, big_radius, big_size, separation_big);
 
-	dim3 dimBlock = dim3(10, 10);
+	dim3 dimBlock = dim3(16, 16);
 	int yBlocks = cols / dimBlock.y + ((cols%dimBlock.y) == 0 ? 0 : 1);
 	int xBlocks = rows / dimBlock.x + ((rows%dimBlock.x) == 0 ? 0 : 1);
 	dim3 dimGrid = dim3(xBlocks, yBlocks);
@@ -208,6 +235,9 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 		exit(1);
 	}
 	for (int i = 0; i < ticks; i++) {
+
+		bool dump = i % dump_each == 0;
+
 		switch (met) {
 		case 1: {
 			///-----------EULER------------
@@ -222,20 +252,20 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 			reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
 			gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
 			computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
-			updateEulerBigMass(big, big_size, delta_t);
+			updateEulerBigMass(big, big_size, delta_t, dump, stats, i, separation_big, g_earth, dump_each);
 			verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
 			break;
 		}
 		case 3: {
 			///------------RK4-------------
 			computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
-			updateEulerBigMass(big, big_size, delta_t);
+			updateEulerBigMass(big, big_size, delta_t, dump, stats, i, separation_big, g_earth, dump_each);
 			initialVelAccel << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
 			rk4 << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
 			break;
 		}
 		}
-		if (i % dump_each == 0) {
+		if (dump) {
 			// Dump to file
 			d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
 			m.lock();
@@ -253,6 +283,13 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	printf("Wasted %f seconds writing\n", waited / 1000.0);
 	auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - pre);
 	printf("Millis elapsed: %d\n", elapsed.count());
+
+
+	printf("Writing stats...");
+	auto waitingStats = clock.now();
+	writeStats(stats, (ticks/dump_each), std::string(DUMP_FOLDER) + "/stats.txt");
+	auto waitedStats = std::chrono::duration_cast<std::chrono::milliseconds>(clock.now() - waitingStats);
+	printf("Wasted %f seconds writing stats\n", waitedStats / 1000.0);
 
 	
 	status = cudaDeviceReset();
