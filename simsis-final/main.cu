@@ -9,7 +9,6 @@
 #include <mutex>
 #include <Windows.h>
 #include "cuda_runtime.h"
-
 #include "classes/Particle.hpp"
 #include "classes/Vector.hpp"
 #include "classes/Grid.hpp"
@@ -96,27 +95,51 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 }
 
 
-
+const char * GetOption(char * argv[], int argc, const char * option, const char * default) {
+	const char * value = nullptr;
+	for (int i = 0; i < argc; i++) {
+		if (strcmp(argv[i], option) == 0) {
+			value = argv[i + 1];
+			break;
+		}
+	}
+	if (value == nullptr) {
+		value = default;
+	}
+	printf("%-20s=\t%s\n", option, value);
+	return value;
+}
 
 
 #define DUMP_FOLDER "dump"
 #define THREAD_COUNT 8
- int main(){
+ int main(int argc, char * argv[]){
 	
 	cudaError_t status;
+	const char * method = GetOption(argv, argc, "--method", "euler");
+	float simulation_t = atof(GetOption(argv, argc, "--simulation-time", "5"));
+	float delta_t = atof(GetOption(argv, argc, "--delta-time", "0.001f"));
+	int rows = atoi(GetOption(argv, argc, "--rows", "50"));
+	int cols = atoi(GetOption(argv, argc, "--cols", "50"));
+	int frame_rate = atoi(GetOption(argv, argc, "--frame-rate", "60"));
+	float separation = atof(GetOption(argv, argc, "--separation", "0.05"));
+	float mass = atof(GetOption(argv, argc, "--mass", "0.1"));
+	float radius = atof(GetOption(argv, argc, "--radius", "0.05")); 
+	float g_earth = atof(GetOption(argv, argc, "--gravity", "9.81")); 
+	float k = atof(GetOption(argv, argc, "-k", "1E3"));
+	float b = atof(GetOption(argv, argc, "--b-scale", "2")) * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
+	int skip_x = atoi(GetOption(argv, argc, "--skip-x", "1"));
+	int skip_y = atoi(GetOption(argv, argc, "--skip-y", "1")); 
 
-	float simulation_t = 5;
-
-	float delta_t = 0.001f;
-	int rows = 50, cols = 50;
-	int frame_rate = 60;
-	float separation = 0.05, mass = 0.1, radius = 0.05, g_earth = 9.81, k = 1E3, b =  2 * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
-	int skip_x = 1, skip_y = 1;
-
-	printf("Particles: \n\tdelta_t: %f\tmass: %f\t k=%f\t b=%f\n", delta_t, mass, k, b);
-	float big_mass = 5, big_radius = 0.15, kn = 1E3, kt = 1E3, separation_big = big_radius, kbig = k, bbig = 0; b;
+	float big_mass = atof(GetOption(argv, argc, "--big-mass", "5"));
+	float big_radius = atof(GetOption(argv, argc, "--big-radius", "0.15"));
+	float kn = atof(GetOption(argv, argc, "--kn", "1E3"));
+	float kt = atof(GetOption(argv, argc, "--kt", "1E3"));
+	float separation_big = atof(GetOption(argv, argc, "--kn", std::to_string(big_radius).c_str()));
+	float kbig = atof(GetOption(argv, argc, "--kbig", std::to_string(k).c_str()));
+	float bbig = atof(GetOption(argv, argc, "--bbig", std::to_string(0).c_str()));
+	
 	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
-
 	int ticks = simulation_t/delta_t;
 	int dump_each = (int) ((1.0 / frame_rate) / delta_t);
 
@@ -170,30 +193,48 @@ __host__ void updateEulerBigMass(Particle * p_host, int p_size, float delta_t) {
 
 	std::thread t[THREAD_COUNT];
 	for (int i = 0; i < THREAD_COUNT; i++) t[i] = std::thread(writer);
-
+	int met;
+	if (strcmp(method, "euler") == 0) {
+		met = 1;
+	}
+	else if (strcmp(method, "verlet") == 0) {
+		met = 2;
+	}
+	else if (strcmp(method, "rk4") == 0) {
+		met = 3;
+	}
+	else {
+		printf("Error: method % is not supported.\n", method);
+		exit(1);
+	}
 	for (int i = 0; i < ticks; i++) {
-
-		///-----------EULER------------
-		/*reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
-		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
-		updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);*/
-		
-		///-----------VERLET-----------
-		/*verletPositions << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
-		reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
-		gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
-		computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
-		updateEulerBigMass(big, big_size, delta_t);
-		verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);*/
-		
-
-		///------------RK4-------------
-		computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
-		updateEulerBigMass(big, big_size, delta_t);
-		initialVelAccel << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
-		rk4 << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
-		
-		
+		switch (met) {
+		case 1: {
+			///-----------EULER------------
+			reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
+			gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
+			updateEuler << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+			break;
+		}
+		case 2: {
+			///-----------VERLET-----------
+			verletPositions << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+			reset << <dimGrid, dimBlock >> > (g_device, g_earth, skip_x, skip_y);
+			gridElasticForce << <dimGrid, dimBlock >> > (g_device, k, b, separation, skip_x, skip_y);
+			computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
+			updateEulerBigMass(big, big_size, delta_t);
+			verletVelocities << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y);
+			break;
+		}
+		case 3: {
+			///------------RK4-------------
+			computeBigMassForces(big, big_size, g_device, g_earth, separation, kn, kt, separation_big, kbig, bbig);
+			updateEulerBigMass(big, big_size, delta_t);
+			initialVelAccel << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
+			rk4 << <dimGrid, dimBlock >> > (g_device, delta_t, skip_x, skip_y, k, b, separation, mass, g_earth);
+			break;
+		}
+		}
 		if (i % dump_each == 0) {
 			// Dump to file
 			d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
