@@ -116,28 +116,29 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
  int main(int argc, char * argv[]){
 	
 	cudaError_t status;
-	const char * method = GetOption(argv, argc, "--method", "euler");
+	const char * method = GetOption(argv, argc, "--method", "verlet");
 	float simulation_t = atof(GetOption(argv, argc, "--simulation-time", "5"));
-	float delta_t = atof(GetOption(argv, argc, "--delta-time", "0.001f"));
-	int rows = atoi(GetOption(argv, argc, "--rows", "50"));
-	int cols = atoi(GetOption(argv, argc, "--cols", "50"));
+	float delta_t = atof(GetOption(argv, argc, "--delta-time", "0.00025f"));
+	int rows = atoi(GetOption(argv, argc, "--rows", "75"));
+	int cols = atoi(GetOption(argv, argc, "--cols", "75"));
 	int frame_rate = atoi(GetOption(argv, argc, "--frame-rate", "60"));
 	float separation = atof(GetOption(argv, argc, "--separation", "0.05"));
-	float mass = atof(GetOption(argv, argc, "--mass", "0.1"));
-	float radius = atof(GetOption(argv, argc, "--radius", "0.05")); 
+	float mass = atof(GetOption(argv, argc, "--mass", "0.005"));
+	float radius = atof(GetOption(argv, argc, "--radius", "0.01")); 
 	float g_earth = atof(GetOption(argv, argc, "--gravity", "9.81")); 
-	float k = atof(GetOption(argv, argc, "-k", "1E3"));
-	float b = atof(GetOption(argv, argc, "--b-scale", "2")) * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
+	float k = atof(GetOption(argv, argc, "-k", "1.5E3"));
+	float b = atof(GetOption(argv, argc, "--b-scale", "1")) * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
 	int skip_x = atoi(GetOption(argv, argc, "--skip-x", "1"));
 	int skip_y = atoi(GetOption(argv, argc, "--skip-y", "1")); 
 
 	float big_mass = atof(GetOption(argv, argc, "--big-mass", "5"));
 	float big_radius = atof(GetOption(argv, argc, "--big-radius", "0.15"));
-	float kn = atof(GetOption(argv, argc, "--kn", "1E3"));
+	float kn = atof(GetOption(argv, argc, "--kn", "1E5"));
 	float kt = atof(GetOption(argv, argc, "--kt", "1E3"));
 	float separation_big = atof(GetOption(argv, argc, "--kn", std::to_string(big_radius).c_str()));
-	float kbig = atof(GetOption(argv, argc, "--kbig", std::to_string(k).c_str()));
+	float kbig = atof(GetOption(argv, argc, "--kbig", std::to_string(1E7).c_str()));
 	float bbig = atof(GetOption(argv, argc, "--bbig", std::to_string(0).c_str()));
+	int big_size = atoi(GetOption(argv, argc, "--big-size", "2"));
 	
 	Vec3 big_init = { rows/2*separation, rows/2*separation, 3 };
 	int ticks = simulation_t/delta_t;
@@ -146,7 +147,6 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	Grid<Particle> * g = new Grid<Particle>(rows, cols);
 	Grid<Particle> * g_device = Grid<Particle>::gridcpy(g, Grid<Particle>::UPLOAD);
 
-	int big_size = 2;
 	Particle * big = newParticles(big_init, big_mass, big_radius, big_size, separation_big);
 
 	dim3 dimBlock = dim3(10, 10);
