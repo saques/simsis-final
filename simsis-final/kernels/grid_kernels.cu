@@ -381,6 +381,7 @@ __global__ void resetBigParticles(Particle * particles, int size, float g) {
 	particles[x] = p;
 }
 
+
 __global__ void updateEulerBigParticles(Particle * particles, int size, float delta_t) {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 
@@ -398,4 +399,53 @@ __global__ void updateEulerBigParticles(Particle * particles, int size, float de
 	sumf(&delta_x, &p.position);
 
 	particles[x] = p;
+}
+
+__global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural, float * kinetic_t, float * elastic_t) {
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	int m_row = grid->getRows() - 1;
+	int m_col = grid->getCols() - 1;
+	//Borders are fixed
+	if (!checkGridBounds(x, y, m_row, m_col, 1, 1))
+		return;
+	extern __shared__ float s[];
+	Particle p = grid->get(x, y);
+
+	float kinetic = (1.0 / 2.0)*p.mass*dotf(&p.velocity, &p.velocity);
+	float elastic = 0;
+	for (int i = x - 1; i <= x + 1; i++) {
+		for (int j = y - 1; j <= y + 1; j++) {
+			if (!(i == x && j == y)) {
+				Particle o = grid->get(i, j);
+				float dst = distance(&p.position, &o.position);
+				elastic += (1.0 / 2.0)*k*powf(dst - natural, 2);
+			}
+		}
+	}
+	int pos = threadIdx.x*blockDim.x + threadIdx.y;
+	int size = blockDim.x * blockDim.y;
+
+	s[pos] = kinetic;
+	s[pos + size] = elastic;
+
+	__syncthreads();
+
+	for (int i = 1; i < size; i *= 2) {
+		int index = 2 * i * pos;
+
+		if (index < pos) {
+			s[index] += s[index + i];
+			s[index + size] += s[index + i + size];
+		}
+		__syncthreads();
+	}
+
+	// write result for this block to global mem
+	if (pos == 0) {
+		atomicAdd(kinetic_t, s[0]);
+		atomicAdd(elastic_t, s[size]);
+	}	
+	
 }

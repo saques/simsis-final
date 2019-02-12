@@ -55,7 +55,7 @@ __host__  void writeStats(Stats * stats, int size, std::string path) {
 
 	for (int i = 0; i < size; i++) {
 		Stats s = stats[i];
-		file << s.COM_height << " " << s.deformation << " " << s.big_energy << " " << s.grid_energy << std::endl;
+		file << s.COM_height << " " << s.deformation << " " << s.big_energy << " " << s.grid_kinetic_energy << " " << s.grid_elastic_energy << std::endl;
 	}
 
 	file.close();
@@ -133,6 +133,38 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 	}
 	printf("%-20s=\t%s\n", option, value);
 	return value;
+}
+
+__host__ void computeGridEnergyMain(Grid<Particle> * grid, float k, float natural, int dim_x, int dim_y, int cols, int rows, Stats*stats, int pos) {
+
+	float kinetic_h = 0;
+	float * kinetic_d;
+
+	float elastic_h = 0;
+	float * elastic_d;
+
+	dim3 dimBlock = dim3(dim_x, dim_y);
+	int yBlocks = cols / dimBlock.y + ((cols%dimBlock.y) == 0 ? 0 : 1);
+	int xBlocks = rows / dimBlock.x + ((rows%dimBlock.x) == 0 ? 0 : 1);
+	dim3 dimGrid = dim3(xBlocks, yBlocks);
+
+	cudaMalloc((void **)&(kinetic_d), sizeof(float));
+	cudaMemcpy(kinetic_d, &kinetic_h, sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMalloc((void **)&(elastic_d), sizeof(float));
+	cudaMemcpy(elastic_d, &elastic_h, sizeof(float), cudaMemcpyHostToDevice);
+
+	computeGridEnergy << <dimGrid, dimBlock , 2 * dim_x * dim_y* sizeof(float)>> > (grid, k, natural, kinetic_d, elastic_d);
+
+	cudaMemcpy(&kinetic_h, kinetic_d, sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(&elastic_h, elastic_d, sizeof(float), cudaMemcpyDeviceToHost);
+
+	cudaFree(kinetic_d);
+	cudaFree(elastic_d);
+
+	stats[pos].grid_elastic_energy = elastic_h;
+	stats[pos].grid_kinetic_energy = kinetic_h;
+
 }
 
 
@@ -267,6 +299,7 @@ const char * GetOption(char * argv[], int argc, const char * option, const char 
 		}
 		}
 		if (dump) {
+			computeGridEnergyMain(g_device, k, separation, 16, 16, cols, rows, stats, i/dump_each);
 			// Dump to file
 			d = Grid<Particle>::gridcpy(g_device, Grid<Particle>::DOWNLOAD);
 			m.lock();

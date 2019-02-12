@@ -13,7 +13,7 @@ public:
 	float COM_height, deformation, big_energy;
 
 	//Grid stats
-	float grid_energy;
+	float grid_elastic_energy, grid_kinetic_energy;
 
 	__host__ __device__ void setCOM_height(Particle * particles, int size) {
 		COM_height = 0;
