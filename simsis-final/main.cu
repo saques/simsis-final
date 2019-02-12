@@ -175,16 +175,16 @@ __host__ void computeGridEnergyMain(Grid<Particle> * grid, float k, float natura
 	cudaError_t status;
 	const char * method = GetOption(argv, argc, "--method", "verlet");
 	float simulation_t = atof(GetOption(argv, argc, "--simulation-time", "5"));
-	float delta_t = atof(GetOption(argv, argc, "--delta-time", "0.00025f"));
+	float delta_t = atof(GetOption(argv, argc, "--delta-time", "0.0001f"));
 	int rows = atoi(GetOption(argv, argc, "--rows", "75"));
 	int cols = atoi(GetOption(argv, argc, "--cols", "75"));
 	int frame_rate = atoi(GetOption(argv, argc, "--frame-rate", "60"));
 	float separation = atof(GetOption(argv, argc, "--separation", "0.05"));
-	float mass = atof(GetOption(argv, argc, "--mass", "0.005"));
-	float radius = atof(GetOption(argv, argc, "--radius", "0.01")); 
+	float mass = atof(GetOption(argv, argc, "--mass", "0.001"));
+	float radius = atof(GetOption(argv, argc, "--radius", "0.02")); 
 	float g_earth = atof(GetOption(argv, argc, "--gravity", "9.81")); 
-	float k = atof(GetOption(argv, argc, "-k", "1.5E3"));
-	float b = atof(GetOption(argv, argc, "--b-scale", "1")) * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
+	float k = atof(GetOption(argv, argc, "-k", "3E3"));
+	float b = atof(GetOption(argv, argc, "--b-scale", "0.5")) * sqrtf(mass * k);	// Crit. Amort. : b = 2 * sqrt(mass * k)
 	int skip_x = atoi(GetOption(argv, argc, "--skip-x", "1"));
 	int skip_y = atoi(GetOption(argv, argc, "--skip-y", "1")); 
 

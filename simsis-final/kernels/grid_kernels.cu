@@ -5,6 +5,8 @@
 #include "../classes/Vector.hpp"
 #include "../classes/Particle.hpp"
 
+#define SQRT_2 sqrtf(2)
+
 __device__ void applyElasticForce(Particle * p, Particle * o, float k, float b, float natural) {
 
 	Vec3 relative;
@@ -64,7 +66,10 @@ __global__ void moveDownwardsCool(Grid<Particle> * grid) {
 		p.position.z -= sqrtf(powf(x, 2) + powf(y, 2));
 		grid->set(x, y, p);
 	}
+}
 
+__device__ bool isDiag(int i, int j, int x, int y) {
+	return (abs(i - x) + abs(j - y)) == 2;
 }
 
 __device__ bool checkGridBounds(int row, int col, int m_row, int m_col, int skip_row, int skip_col) {
@@ -76,7 +81,6 @@ __device__ bool checkGridBounds(int row, int col, int m_row, int m_col, int skip
 		return false;
 	return true;
 }
-	
 
 //Compute elastic force
 __global__ void gridElasticForce(Grid<Particle> * grid, float k, float b, float natural, int skip_x, int skip_y) {
@@ -93,12 +97,14 @@ __global__ void gridElasticForce(Grid<Particle> * grid, float k, float b, float 
 	//from this memory (100x faster than global GPU memory) the particles
 	//in the following loop
 	Particle p = grid->get(x, y);
+
+	float diag_natural = natural * SQRT_2;
 	
 	for (int i = max(0, x - 1); i <= min(x+1, m_row); i++) {
 		for (int j = max(0,y - 1); j <= min(y+1, m_col); j++) {
 			if (!(i == x && j == y)) {
 				Particle o = grid->get(i, j);
-				applyElasticForce(&p, &o, k, b, natural);
+				applyElasticForce(&p, &o, k, b, isDiag(i,j,x,y) ? diag_natural : natural);
 			}
 		}
 	}
@@ -181,6 +187,8 @@ __device__ VelAccel calcVel(Grid<Particle> * grid, const VelAccel &pair, int x, 
 	Particle p = grid->get(x, y);
 	p.position = sumd(p.position, sumd(scld(delta_t, pair.vel), scld(0.5f * delta_t * delta_t, pair.accel)));
 	p.velocity = sumd(p.velocity, scld(delta_t, pair.accel));
+
+	float diag_natural = natural * SQRT_2;
 	
 	// GetAccel
 	for (int i = max(0, x - 1); i <= min(x + 1, m_row); i++) {
@@ -189,7 +197,7 @@ __device__ VelAccel calcVel(Grid<Particle> * grid, const VelAccel &pair, int x, 
 				Particle o = grid->get(i, j);
 				o.position = sumd(o.position, sumd(scld(delta_t, o.velocity), scld(0.5f * delta_t * delta_t, o.acceleration)));
 				o.velocity = sumd(o.velocity, scld(delta_t, o.acceleration));
-				applyElasticForce(&p, &o, k, b, natural);
+				applyElasticForce(&p, &o, k, b, isDiag(i, j, x, y) ? diag_natural : natural);
 			}
 		}
 	}
@@ -413,6 +421,8 @@ __global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural,
 	extern __shared__ float s[];
 	Particle p = grid->get(x, y);
 
+	float diag_natural = natural * SQRT_2;
+
 	float kinetic = (1.0 / 2.0)*p.mass*dotf(&p.velocity, &p.velocity);
 	float elastic = 0;
 	for (int i = x - 1; i <= x + 1; i++) {
@@ -420,7 +430,7 @@ __global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural,
 			if (!(i == x && j == y)) {
 				Particle o = grid->get(i, j);
 				float dst = distance(&p.position, &o.position);
-				elastic += (1.0 / 2.0)*k*powf(dst - natural, 2);
+				elastic += (1.0 / 2.0)*k*powf(dst - (isDiag(i, j, x, y) ? diag_natural : natural), 2);
 			}
 		}
 	}
