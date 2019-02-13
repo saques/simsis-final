@@ -156,7 +156,7 @@ __host__ void computeGridEnergyMain(Grid<Particle> * grid, float k, float natura
 	cudaMalloc((void **)&(elastic_d), sizeof(float));
 	cudaMemcpy(elastic_d, &elastic_h, sizeof(float), cudaMemcpyHostToDevice);
 
-	computeGridEnergy << <dimGrid, dimBlock , 2 * dim_x * dim_y* sizeof(float)>> > (grid, k, natural, kinetic_d, elastic_d);
+	computeGridEnergy << <dimGrid, dimBlock >> > (grid, k, natural, kinetic_d, elastic_d);
 
 	cudaMemcpy(&kinetic_h, kinetic_d, sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(&elastic_h, elastic_d, sizeof(float), cudaMemcpyDeviceToHost);

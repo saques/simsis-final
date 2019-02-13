@@ -420,7 +420,7 @@ __global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural,
 	//Borders are fixed
 	if (!checkGridBounds(x, y, m_row, m_col, 1, 1))
 		return;
-	extern __shared__ float s[];
+
 	Particle p = grid->get(x, y);
 
 	float diag_natural = natural * SQRT_2;
@@ -436,28 +436,8 @@ __global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural,
 			}
 		}
 	}
-	int pos = threadIdx.x*blockDim.x + threadIdx.y;
-	int size = blockDim.x * blockDim.y;
 
-	s[pos] = kinetic;
-	s[pos + size] = elastic;
+	atomicAdd(kinetic_t, kinetic);
+	atomicAdd(elastic_t, elastic);
 
-	__syncthreads();
-
-	for (int i = 1; i < size; i *= 2) {
-		int index = 2 * i * pos;
-
-		if (index < pos) {
-			s[index] += s[index + i];
-			s[index + size] += s[index + i + size];
-		}
-		__syncthreads();
-	}
-
-	// write result for this block to global mem
-	if (pos == 0) {
-		atomicAdd(kinetic_t, s[0]);
-		atomicAdd(elastic_t, s[size]);
-	}	
-	
 }
