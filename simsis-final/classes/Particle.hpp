@@ -16,7 +16,7 @@ Particle * newParticles(float mass, float radius, int size, float separation, in
 
 	float sep_x = sloped ? separation / SQRT_2 : separation, sep_z = sloped ? separation / SQRT_2 : 0;
 
-	Vec3 initial_position = { rows / 2 * grid_separation - (big_size - 1)*sep_x / 2, cols / 2 * grid_separation, zinit  - (big_size - 1)*sep_z };
+	Vec3 initial_position = { rows / 2 * grid_separation - (big_size - 1)*sep_x / 2, cols / 2 * grid_separation, zinit  - (big_size - 1)*sep_z/2 };
 
 	Particle * ans = (Particle *)malloc(sizeof(Particle)*size);
 
