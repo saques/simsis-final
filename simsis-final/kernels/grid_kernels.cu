@@ -68,11 +68,13 @@ __global__ void moveDownwardsCool(Grid<Particle> * grid) {
 	}
 }
 
-__device__ bool isDiag(int i, int j, int x, int y) {
-	return (abs(i - x) + abs(j - y)) == 2;
+__device__ bool isDiag(int x, int y, int i, int j) {
+	return !(x == i || y == j);
 }
 
 __device__ bool checkGridBounds(int row, int col, int m_row, int m_col, int skip_row, int skip_col) {
+	if (row > m_row || col > m_col)
+		return false;
 	if ((row == 0 || row == m_row) && (col == 0 || col == m_col))	
 		return false;											
 	if ((row == 0 || row == m_row) && col % skip_col == 0)
@@ -104,7 +106,7 @@ __global__ void gridElasticForce(Grid<Particle> * grid, float k, float b, float 
 		for (int j = max(0,y - 1); j <= min(y+1, m_col); j++) {
 			if (!(i == x && j == y)) {
 				Particle o = grid->get(i, j);
-				applyElasticForce(&p, &o, k, b, isDiag(i,j,x,y) ? diag_natural : natural);
+				applyElasticForce(&p, &o, k, b, isDiag(x,y,i,j) ? diag_natural : natural);
 			}
 		}
 	}
@@ -197,7 +199,7 @@ __device__ VelAccel calcVel(Grid<Particle> * grid, const VelAccel &pair, int x, 
 				Particle o = grid->get(i, j);
 				o.position = sumd(o.position, sumd(scld(delta_t, o.velocity), scld(0.5f * delta_t * delta_t, o.acceleration)));
 				o.velocity = sumd(o.velocity, scld(delta_t, o.acceleration));
-				applyElasticForce(&p, &o, k, b, isDiag(i, j, x, y) ? diag_natural : natural);
+				applyElasticForce(&p, &o, k, b, isDiag(x, y, i, j) ? diag_natural : natural);
 			}
 		}
 	}
@@ -430,7 +432,7 @@ __global__ void computeGridEnergy(Grid<Particle> * grid, float k, float natural,
 			if (!(i == x && j == y)) {
 				Particle o = grid->get(i, j);
 				float dst = distance(&p.position, &o.position);
-				elastic += (1.0 / 2.0)*k*powf(dst - (isDiag(i, j, x, y) ? diag_natural : natural), 2);
+				elastic += (1.0 / 2.0)*k*powf(dst - (isDiag(x, y, i, j) ? diag_natural : natural), 2);
 			}
 		}
 	}
