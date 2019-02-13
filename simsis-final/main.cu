@@ -73,14 +73,16 @@ __host__ void computeBigMassForces(Particle * p_host, int p_size, Grid<Particle>
 	interactBigParticles << <1, p_size >> > (p_device, p_size, natural, kbig, bbig);
 
 	//Interact grid and particle
-	int x_start = (int)((p_host->position.x - p_host->radius) / separation);
-	int y_start = (int)((p_host->position.y - p_host->radius) / separation);
+	int x_start = (int)(((p_host[0].position.x + p_host[p_size-1].position.x)/2 - p_host->radius*(p_size/2)) / separation);
+	int y_start = (int)(((p_host[0].position.y + p_host[p_size-1].position.y)/2 - p_host->radius*(p_size/2)) / separation);
 
-	int x_end = x_start + (int)(2 * p_host->radius / separation);
-	int y_end = y_start + (int)(2 * p_host->radius / separation);
+	int end_add = max(2 * p_host->radius * p_size, natural*(p_size-1) + 2 * p_host->radius);
+
+	int x_end = x_start + (int)(end_add / separation);
+	int y_end = y_start + (int)(end_add / separation);
 
 
-	dim3 dimBlock = dim3(10, 10);
+	dim3 dimBlock = dim3(16, 16);
 	int yBlocks = (y_end - y_start) / dimBlock.y + (((y_end - y_start) % dimBlock.y) == 0 ? 0 : 1);
 	int xBlocks = (x_end - x_start) / dimBlock.x + (((x_end - x_start) % dimBlock.x) == 0 ? 0 : 1);
 	dim3 dimGrid = dim3(xBlocks, yBlocks);
